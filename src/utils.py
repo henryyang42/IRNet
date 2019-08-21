@@ -8,7 +8,7 @@
 
 import json
 import time
-
+import tqdm
 import copy
 import numpy as np
 import os
@@ -27,11 +27,12 @@ def load_word_emb(file_name, use_small=False):
     ret = {}
     with open(file_name) as inf:
         for idx, line in enumerate(inf):
-            if (use_small and idx >= 500000):
+            if (use_small and idx >= 100000):
                 break
             info = line.strip().split(' ')
             if info[0].lower() not in ret:
                 ret[info[0]] = np.array(list(map(lambda x:float(x), info[1:])))
+    print ('Loading word embedding loaded.')
     return ret
 
 def lower_keys(x):
@@ -231,7 +232,7 @@ def epoch_train(model, optimizer, batch_size, sql_data, table_data,
     perm=np.random.permutation(len(sql_data))
     cum_loss = 0.0
     st = 0
-    while st < len(sql_data):
+    for st in tqdm.tqdm(range(0, len(sql_data), batch_size)):
         ed = st+batch_size if st+batch_size < len(perm) else len(perm)
         examples = to_batch_seq(sql_data, table_data, perm, st, ed)
         optimizer.zero_grad()
@@ -253,7 +254,6 @@ def epoch_train(model, optimizer, batch_size, sql_data, table_data,
             grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip_grad)
         optimizer.step()
         cum_loss += loss.data.cpu().numpy()*(ed - st)
-        st = ed
     return cum_loss / len(sql_data)
 
 def epoch_acc(model, batch_size, sql_data, table_data, beam_size=3):
