@@ -675,11 +675,18 @@ if __name__ == '__main__':
     index = range(len(datas))
     count = 0
     exception_count = 0
+    js = []
+    with open(args.output_path+'.gold', 'w', encoding='utf8') as d:
+        for i in index:
+            js.append({'question': datas[i]['question'], 'gold_sql': datas[i]['query'], 'db_id': datas[i]['db_id']})
+            d.write('%s\t%s\n' % (datas[i]['query'], datas[i]['db_id']))
+
     with open(args.output_path, 'w', encoding='utf8') as d:
         for i in index:
             try:
                 result = transform(datas[i], schemas[datas[i]['db_id']])
                 d.write(result[0] + '\n')
+                js[i]['pred_sql'] = result[0]
                 count += 1
             except Exception as e:
                 result = transform(datas[i], schemas[datas[i]['db_id']], origin='Root1(3) Root(5) Sel(0) N(0) A(3) C(0) T(0)')
@@ -692,3 +699,6 @@ if __name__ == '__main__':
                 print('===\n\n')
 
     print(count, exception_count)
+    with open('output.json', 'w') as f:
+        import json
+        json.dump(js, f) 

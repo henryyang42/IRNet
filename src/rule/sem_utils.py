@@ -27,10 +27,13 @@ def load_dataSets(args):
 
 
 def partial_match(query, table_name):
-    query = [lemma(x) for x in query]
-    table_name = [lemma(x) for x in table_name]
-    if query in table_name:
-        return True
+    try:
+        query = [lemma(x) for x in query]
+        table_name = [lemma(x) for x in table_name]
+        if query in table_name:
+            return True
+    except:
+        pass
     return False
 
 
