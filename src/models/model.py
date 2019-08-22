@@ -194,9 +194,10 @@ class IRNet(BasicModel):
         sketch_prob_var = torch.stack(
             [torch.stack(action_probs_i, dim=0).log().sum() for action_probs_i in action_probs], dim=0)
 
-        table_embedding = self.gen_x_batch(batch.table_sents)
-        src_embedding = self.gen_x_batch(batch.src_sents)
-        schema_embedding = self.gen_x_batch(batch.table_names)
+        # table_embedding = self.gen_x_batch(batch.table_sents)
+        # src_embedding = self.gen_x_batch(batch.src_sents)
+        # schema_embedding = self.gen_x_batch(batch.table_names)
+        src_embedding, table_embedding, schema_embedding = self.gen_x_batch(batch.src_sents, batch.table_sents, batch.table_names)
 
         # get emb differ
         embedding_differ = self.embedding_cosine(src_embedding=src_embedding, table_embedding=table_embedding,
@@ -495,9 +496,10 @@ class IRNet(BasicModel):
 
         padding_sketch = self.padding_sketch(sketch_actions)
 
-        table_embedding = self.gen_x_batch(batch.table_sents)
-        src_embedding = self.gen_x_batch(batch.src_sents)
-        schema_embedding = self.gen_x_batch(batch.table_names)
+        # table_embedding = self.gen_x_batch(batch.table_sents)
+        # src_embedding = self.gen_x_batch(batch.src_sents)
+        # schema_embedding = self.gen_x_batch(batch.table_names)
+        src_embedding, table_embedding, schema_embedding = self.gen_x_batch(batch.src_sents, batch.table_sents, batch.table_names)
 
         # get emb differ
         embedding_differ = self.embedding_cosine(src_embedding=src_embedding, table_embedding=table_embedding,

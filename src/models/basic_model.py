@@ -23,8 +23,11 @@ class BasicModel(nn.Module):
 
     def __init__(self):
         super(BasicModel, self).__init__()
-        self.xlnet_model = XLNetModel.from_pretrained('xlnet-base-cased')
-        self.xlnet_tokenzier = XLNetTokenizer.from_pretrained('xlnet-base-cased')
+        self.lm_model = XLNetModel.from_pretrained('xlnet-base-cased')
+        self.tokenizer = XLNetTokenizer.from_pretrained('xlnet-base-cased')
+        self.CLS = self.tokenizer.encode('<cls>')[0]
+        self.PAD = self.tokenizer.encode('<pad>')[0]
+        self.SEP = self.tokenizer.encode('<sep>')[0]
         self.emb_cache = {}
         
 
@@ -109,65 +112,141 @@ class BasicModel(nn.Module):
 
         return padding_result
 
-    def gen_x_batch(self, q):
-        PAD = 5
-        B = len(q)
-        val_embs = []
-        val_len = np.zeros(B, dtype=np.int64)
-        is_list = False
-        if type(q[0][0]) == list:
-            is_list = True
-        for i, one_q in enumerate(q):
-            key = str(one_q)
-            if key not in self.emb_cache:
-                if is_list:
-                    one_q = list(map(lambda x: ' '.join(x), one_q))
-                ids = []
-                for ws in one_q:
-                    ws_id = torch.tensor(self.xlnet_tokenzier.encode(ws))
-                    ids.append(ws_id)
+    def gen_x_batch(self, src_sents, column_names=None, table_names=None):
+        B = len(src_sents)
+        if column_names and table_names:
+            for sent, columns, tables in zip(src_sents, column_names, table_names):
+                key = str(sent + columns + tables)
+                if key in self.emb_cache:
+                    continue
+                ids = [self.CLS]
+                seg_ids = []
+                for seg in sent:
+                    seg_id = self.tokenizer.encode(' '.join(seg))
+                    seg_ids.append(seg_id)
+                    ids += seg_id
                 
-                ids = torch.nn.utils.rnn.pad_sequence(ids, batch_first=True, padding_value=PAD)
-                if self.args.cuda:
-                    ids = ids.cuda()
-                with torch.no_grad():
-                    embs = self.xlnet_model(ids)[0]
-                embs = embs.cpu().numpy()
-                ids = ids.cpu().numpy()
-                embs_ = []
-                for emb, id_ in zip(embs, ids):
-                    l = sum(id_ != PAD)
-                    embs_.append(emb[:l].sum(-2) / l)
-                self.emb_cache[key] = embs_
-        #     if not is_list:
-        #         q_val = list(
-        #             map(lambda x: self.word_emb.get(x, np.zeros(self.args.col_embed_size, dtype=np.float32)), one_q))
-        #     else:
-        #         q_val = []
-        #         for ws in one_q:
-        #             emb_list = []
-        #             ws_len = len(ws)
-        #             for w in ws:
-        #                 emb_list.append(self.word_emb.get(w, self.word_emb['unk']))
-        #             if ws_len == 0:
-        #                 raise Exception("word list should not be empty!")
-        #             elif ws_len == 1:
-        #                 q_val.append(emb_list[0])
-        #             else:
-        #                 q_val.append(sum(emb_list) / float(ws_len))
-            embs = self.emb_cache[key]
-            val_embs.append(embs)
-            val_len[i] = len(embs)
-        max_len = max(val_len)
+                col_ids = []
+                for column in columns:
+                    col_id = self.tokenizer.encode(' '.join(column))
+                    col_ids.append(col_id)
+                    ids += [self.SEP] + col_id
+                
+                tab_ids = []
+                for table in tables:
+                    tab_id = self.tokenizer.encode(' '.join(table))
+                    tab_ids.append(tab_id)
+                    ids += [self.SEP] + tab_id
+                ids.append(self.SEP)
 
-        val_emb_array = np.zeros((B, max_len, self.args.col_embed_size), dtype=np.float32)
-        for i in range(B):
-            for t in range(len(val_embs[i])):
-                val_emb_array[i, t, :] = val_embs[i][t]
-        val_inp = torch.from_numpy(val_emb_array)
-        if self.args.cuda:
-            val_inp = val_inp.cuda()
-        return val_inp
+                with torch.no_grad():
+                    ids_tensor = torch.tensor([ids])
+                    if self.args.cuda:
+                        ids_tensor = ids_tensor.cuda()
+                    embs = self.lm_model(ids_tensor)[0][0]
+                embs = embs.cpu().numpy()[1:]  # remove CLS
+                
+                sent_embs = []
+                idx = 0
+                for seg_id in seg_ids:
+                    l = len(seg_id)
+                    sent_embs.append(embs[idx: idx + l].mean(0))
+                    idx += l
+                
+                sent_embs = np.stack(sent_embs)
+                assert len(sent_embs) == len(sent)
+
+                col_embs = []
+                for col_id in col_ids:
+                    l = len(col_id)
+                    col_embs.append(embs[idx + 1: idx + l + 1].mean(0))
+                    idx += l + 1
+                
+                col_embs = np.stack(col_embs)
+                assert len(col_embs) == len(columns)
+
+                tab_embs = []
+                for tab_id in tab_ids:
+                    l = len(tab_id)
+                    tab_embs.append(embs[idx + 1: idx + l + 1].mean(0))
+                    idx += l + 1
+                
+                tab_embs = np.stack(tab_embs)
+                assert len(tab_embs) == len(tables)
+
+                assert len(embs) == idx + 1
+
+                self.emb_cache[key] = (sent_embs, col_embs, tab_embs)
+                
+        else:
+            for sent in src_sents:
+                key = str(sent)
+                if key in self.emb_cache:
+                    continue
+                ids = [self.CLS]
+                seg_ids = []
+                for seg in sent:
+                    seg_id = self.tokenizer.encode(' '.join(seg))
+                    seg_ids.append(seg_id)
+                    ids += seg_id
+                with torch.no_grad():
+                    ids_tensor = torch.tensor([ids])
+                    if self.args.cuda:
+                        ids_tensor = ids_tensor.cuda()
+                    embs = self.lm_model(ids_tensor)[0][0]
+                embs = embs.cpu().numpy()[1:]  # remove CLS
+                sent_embs = []
+                idx = 0
+                for seg_id in seg_ids:
+                    l = len(seg_id)
+                    sent_embs.append(embs[idx: idx + l].mean(0))
+                    idx += l
+                
+                sent_embs = np.stack(sent_embs)
+                assert len(sent_embs) == len(sent)
+                self.emb_cache[key] = sent_embs
+
+        def pad_embs(embs):
+            max_len = max([len(emb) for emb in embs])
+            val_emb_array = np.zeros((B, max_len, self.args.col_embed_size), dtype=np.float32)
+            for i in range(B):
+                for t in range(len(embs[i])):
+                    val_emb_array[i, t, :] = embs[i][t]
+
+            val_inp = torch.from_numpy(val_emb_array)
+            if self.args.cuda:
+                val_inp = val_inp.cuda()
+            return val_inp
+
+        if column_names and table_names:
+            sent_embs_, col_embs_, tab_embs_ = [], [], []
+            for sent, columns, tables in zip(src_sents, column_names, table_names):
+                key = str(sent + columns + tables)
+                sent_embs, col_embs, tab_embs = self.emb_cache[key]
+                sent_embs_.append(sent_embs)
+                col_embs_.append(col_embs)
+                tab_embs_.append(tab_embs)
+
+            return pad_embs(sent_embs_), pad_embs(col_embs_), pad_embs(tab_embs_)
+        else:
+            sent_embs_ = []
+            for sent in src_sents:
+                key = str(sent)
+                sent_embs = self.emb_cache[key]
+                sent_embs_.append(sent_embs)
+            return pad_embs(sent_embs_)
+
+
+        # max_len = max(val_len)
+
+        # val_emb_array = np.zeros((B, max_len, self.args.col_embed_size), dtype=np.float32)
+        # for i in range(B):
+        #     for t in range(len(val_embs[i])):
+        #         val_emb_array[i, t, :] = val_embs[i][t]
+        # val_inp = torch.from_numpy(val_emb_array)
+        # if self.args.cuda:
+        #     val_inp = val_inp.cuda()
+        # return val_inp
 
     def save(self, path):
         dir_name = os.path.dirname(path)
