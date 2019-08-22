@@ -110,6 +110,7 @@ class BasicModel(nn.Module):
         return padding_result
 
     def gen_x_batch(self, q):
+        PAD = 5
         B = len(q)
         val_embs = []
         val_len = np.zeros(B, dtype=np.int64)
@@ -126,12 +127,18 @@ class BasicModel(nn.Module):
                     ws_id = torch.tensor(self.xlnet_tokenzier.encode(ws))
                     ids.append(ws_id)
                 
-                ids = torch.nn.utils.rnn.pad_sequence(ids, batch_first=True, padding_value=5)
+                ids = torch.nn.utils.rnn.pad_sequence(ids, batch_first=True, padding_value=PAD)
                 if self.args.cuda:
                     ids = ids.cuda()
                 with torch.no_grad():
-                    embs = self.xlnet_model(ids)[0].mean(-2)
-                self.emb_cache[key] = embs.cpu().numpy()
+                    embs = self.xlnet_model(ids)[0]
+                embs = embs.cpu().numpy()
+                ids = ids.cpu().numpy()
+                embs_ = []
+                for emb, id_ in zip(embs, ids):
+                    l = sum(id_ != PAD)
+                    embs_.append(emb[:l].sum(-2) / l)
+                self.emb_cache[key] = embs_
         #     if not is_list:
         #         q_val = list(
         #             map(lambda x: self.word_emb.get(x, np.zeros(self.args.col_embed_size, dtype=np.float32)), one_q))

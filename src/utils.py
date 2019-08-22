@@ -127,7 +127,7 @@ def process(sql, table):
 
     col_set_iter = [[wordnet_lemmatizer.lemmatize(v).lower() for v in x.split(' ')] for x in sql['col_set']]
     col_iter = [[wordnet_lemmatizer.lemmatize(v).lower() for v in x.split(" ")] for x in tab_cols]
-    q_iter_small = [wordnet_lemmatizer.lemmatize(x).lower() for x in origin_sql]
+    q_iter_small = [wordnet_lemmatizer.lemmatize(x) for x in origin_sql]
     question_arg = copy.deepcopy(sql['question_arg'])
     question_arg_type = sql['question_arg_type']
     one_hot_type = np.zeros((len(question_arg_type), 6))
@@ -263,7 +263,7 @@ def epoch_acc(model, batch_size, sql_data, table_data, beam_size=3):
     st = 0
 
     json_datas = []
-    while st < len(sql_data):
+    for st in tqdm.tqdm(range(0, len(sql_data), batch_size)):
         ed = st+batch_size if st+batch_size < len(perm) else len(perm)
         examples = to_batch_seq(sql_data, table_data, perm, st, ed,
                                                         is_train=False)
@@ -288,7 +288,7 @@ def epoch_acc(model, batch_size, sql_data, table_data, beam_size=3):
             simple_json['model_result'] = pred
 
             json_datas.append(simple_json)
-        st = ed
+
     return json_datas
 
 def eval_acc(preds, sqls):
@@ -296,7 +296,7 @@ def eval_acc(preds, sqls):
     for i, (pred, sql) in enumerate(zip(preds, sqls)):
         if pred['model_result'] == sql['rule_label']:
             best_correct += 1
-    print(best_correct / len(preds))
+    # print(best_correct / len(preds))
     return best_correct / len(preds)
 
 
