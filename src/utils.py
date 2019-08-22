@@ -25,9 +25,10 @@ wordnet_lemmatizer = WordNetLemmatizer()
 def load_word_emb(file_name, use_small=False):
     print ('Loading word embedding from %s'%file_name)
     ret = {}
+    return ret
     with open(file_name) as inf:
         for idx, line in enumerate(inf):
-            if (use_small and idx >= 100000):
+            if (use_small and idx >= 100):
                 break
             info = line.strip().split(' ')
             if info[0].lower() not in ret:
@@ -310,7 +311,7 @@ def load_data_new(sql_path, table_data, use_small=False):
     table_data_new = {table['db_id']: table for table in table_data}
 
     if use_small:
-        return sql_data[:80], table_data_new
+        return sql_data[:256], table_data_new
     else:
         return sql_data, table_data_new
 

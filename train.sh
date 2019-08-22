@@ -10,13 +10,15 @@ CUDA_VISIBLE_DEVICES=$devices python train.py --dataset ./data \
 --loss_epoch_threshold 50 \
 --sketch_loss_coefficie 1.0 \
 --beam_size 1 \
---seed 90 \
+--seed 42 \
 --save ${save_name} \
---embed_size 300 \
+--embed_size 768 \
 --sentence_features \
 --column_pointer \
---hidden_size 300 \
+--hidden_size 768 \
 --lr_scheduler \
 --lr_scheduler_gammar 0.5 \
---att_vec_size 300 \
---toy
+--att_vec_size 768 \
+--batch_size 64 \
+--col_embed_size 768 \
+--lr 0.0001

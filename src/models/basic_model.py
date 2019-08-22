@@ -14,6 +14,7 @@ import torch.nn.functional as F
 import torch.nn.utils
 from torch.autograd import Variable
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
+from pytorch_transformers import XLNetModel, XLNetTokenizer
 
 from src.rule import semQL as define_rule
 
@@ -22,7 +23,10 @@ class BasicModel(nn.Module):
 
     def __init__(self):
         super(BasicModel, self).__init__()
-        pass
+        self.xlnet_model = XLNetModel.from_pretrained('xlnet-base-cased')
+        self.xlnet_tokenzier = XLNetTokenizer.from_pretrained('xlnet-base-cased')
+        self.emb_cache = {}
+        
 
     def embedding_cosine(self, src_embedding, table_embedding, table_unk_mask):
         embedding_differ = []
@@ -113,25 +117,40 @@ class BasicModel(nn.Module):
         if type(q[0][0]) == list:
             is_list = True
         for i, one_q in enumerate(q):
-            if not is_list:
-                q_val = list(
-                    map(lambda x: self.word_emb.get(x, np.zeros(self.args.col_embed_size, dtype=np.float32)), one_q))
-            else:
-                q_val = []
+            key = str(one_q)
+            if key not in self.emb_cache:
+                if is_list:
+                    one_q = list(map(lambda x: ' '.join(x), one_q))
+                ids = []
                 for ws in one_q:
-                    emb_list = []
-                    ws_len = len(ws)
-                    for w in ws:
-                        emb_list.append(self.word_emb.get(w, self.word_emb['unk']))
-                    if ws_len == 0:
-                        raise Exception("word list should not be empty!")
-                    elif ws_len == 1:
-                        q_val.append(emb_list[0])
-                    else:
-                        q_val.append(sum(emb_list) / float(ws_len))
-
-            val_embs.append(q_val)
-            val_len[i] = len(q_val)
+                    ws_id = torch.tensor(self.xlnet_tokenzier.encode(ws))
+                    ids.append(ws_id)
+                
+                ids = torch.nn.utils.rnn.pad_sequence(ids, batch_first=True, padding_value=5)
+                if self.args.cuda:
+                    ids = ids.cuda()
+                with torch.no_grad():
+                    embs = self.xlnet_model(ids)[0].mean(-2)
+                self.emb_cache[key] = embs.cpu().numpy()
+        #     if not is_list:
+        #         q_val = list(
+        #             map(lambda x: self.word_emb.get(x, np.zeros(self.args.col_embed_size, dtype=np.float32)), one_q))
+        #     else:
+        #         q_val = []
+        #         for ws in one_q:
+        #             emb_list = []
+        #             ws_len = len(ws)
+        #             for w in ws:
+        #                 emb_list.append(self.word_emb.get(w, self.word_emb['unk']))
+        #             if ws_len == 0:
+        #                 raise Exception("word list should not be empty!")
+        #             elif ws_len == 1:
+        #                 q_val.append(emb_list[0])
+        #             else:
+        #                 q_val.append(sum(emb_list) / float(ws_len))
+            embs = self.emb_cache[key]
+            val_embs.append(embs)
+            val_len[i] = len(embs)
         max_len = max(val_len)
 
         val_emb_array = np.zeros((B, max_len, self.args.col_embed_size), dtype=np.float32)
