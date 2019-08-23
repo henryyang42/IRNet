@@ -127,3 +127,5 @@ experiments
 saved_model
 *.json
 report.txt
+gg*
+test*

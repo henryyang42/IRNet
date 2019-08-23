@@ -127,7 +127,7 @@ def process(sql, table):
 
     col_set_iter = [[wordnet_lemmatizer.lemmatize(v).lower() for v in x.split(' ')] for x in sql['col_set']]
     col_iter = [[wordnet_lemmatizer.lemmatize(v).lower() for v in x.split(" ")] for x in tab_cols]
-    q_iter_small = [wordnet_lemmatizer.lemmatize(x) for x in origin_sql]
+    q_iter_small = [wordnet_lemmatizer.lemmatize(x).lower() for x in origin_sql]
     question_arg = copy.deepcopy(sql['question_arg'])
     question_arg_type = sql['question_arg_type']
     one_hot_type = np.zeros((len(question_arg_type), 6))
@@ -311,7 +311,7 @@ def load_data_new(sql_path, table_data, use_small=False):
     table_data_new = {table['db_id']: table for table in table_data}
 
     if use_small:
-        return sql_data[:256], table_data_new
+        return sql_data[:500], table_data_new
     else:
         return sql_data, table_data_new
 

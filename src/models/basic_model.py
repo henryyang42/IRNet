@@ -14,21 +14,34 @@ import torch.nn.functional as F
 import torch.nn.utils
 from torch.autograd import Variable
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
-from pytorch_transformers import XLNetModel, XLNetTokenizer
+from pytorch_transformers import *
 
 from src.rule import semQL as define_rule
 
 
 class BasicModel(nn.Module):
 
-    def __init__(self):
+    def __init__(self, args):
         super(BasicModel, self).__init__()
-        self.lm_model = XLNetModel.from_pretrained('xlnet-base-cased')
-        self.tokenizer = XLNetTokenizer.from_pretrained('xlnet-base-cased')
+        weight = 'xlnet-base-cased'
+        # self.lm_model = BertModel.from_pretrained(weight)
+        # self.tokenizer = BertTokenizer.from_pretrained(weight)
+        # self.CLS = self.tokenizer.encode('[CLS]')[0]
+        # self.PAD = self.tokenizer.encode('[PAD]')[0]
+        # self.SEP = self.tokenizer.encode('[SEP]')[0]
+
+        self.lm_model = XLNetModel.from_pretrained(weight)
+        self.tokenizer = XLNetTokenizer.from_pretrained(weight)
+
         self.CLS = self.tokenizer.encode('<cls>')[0]
         self.PAD = self.tokenizer.encode('<pad>')[0]
         self.SEP = self.tokenizer.encode('<sep>')[0]
+
         self.emb_cache = {}
+        self.lm_embed_size = 768
+        self.sent_embed_nn = nn.Linear(self.lm_embed_size, args.col_embed_size)
+        self.column_embed_nn = nn.Linear(self.lm_embed_size, args.col_embed_size)
+        self.table_embed_nn = nn.Linear(self.lm_embed_size, args.col_embed_size)
         
 
     def embedding_cosine(self, src_embedding, table_embedding, table_unk_mask):
@@ -113,31 +126,28 @@ class BasicModel(nn.Module):
         return padding_result
 
     def gen_x_batch(self, src_sents, column_names=None, table_names=None):
-        B = len(src_sents)
+        def _pool(emb):
+            return emb.mean()
+
         if column_names and table_names:
-            for sent, columns, tables in zip(src_sents, column_names, table_names):
-                key = str(sent + columns + tables)
+            for columns, tables in zip(column_names, table_names):
+                key = str(columns + tables)
                 if key in self.emb_cache:
                     continue
+
                 ids = [self.CLS]
-                seg_ids = []
-                for seg in sent:
-                    seg_id = self.tokenizer.encode(' '.join(seg))
-                    seg_ids.append(seg_id)
-                    ids += seg_id
-                
+
                 col_ids = []
                 for column in columns:
                     col_id = self.tokenizer.encode(' '.join(column))
                     col_ids.append(col_id)
-                    ids += [self.SEP] + col_id
-                
+                    ids += col_id + [self.SEP]
+
                 tab_ids = []
                 for table in tables:
                     tab_id = self.tokenizer.encode(' '.join(table))
                     tab_ids.append(tab_id)
-                    ids += [self.SEP] + tab_id
-                ids.append(self.SEP)
+                    ids += tab_id + [self.SEP]
 
                 with torch.no_grad():
                     ids_tensor = torch.tensor([ids])
@@ -146,20 +156,11 @@ class BasicModel(nn.Module):
                     embs = self.lm_model(ids_tensor)[0][0]
                 embs = embs.cpu().numpy()[1:]  # remove CLS
                 
-                sent_embs = []
                 idx = 0
-                for seg_id in seg_ids:
-                    l = len(seg_id)
-                    sent_embs.append(embs[idx: idx + l].mean(0))
-                    idx += l
-                
-                sent_embs = np.stack(sent_embs)
-                assert len(sent_embs) == len(sent)
-
                 col_embs = []
                 for col_id in col_ids:
                     l = len(col_id)
-                    col_embs.append(embs[idx + 1: idx + l + 1].mean(0))
+                    col_embs.append(_pool(embs[idx: idx + l]))
                     idx += l + 1
                 
                 col_embs = np.stack(col_embs)
@@ -168,47 +169,48 @@ class BasicModel(nn.Module):
                 tab_embs = []
                 for tab_id in tab_ids:
                     l = len(tab_id)
-                    tab_embs.append(embs[idx + 1: idx + l + 1].mean(0))
+                    tab_embs.append(_pool(embs[idx: idx + l]))
                     idx += l + 1
                 
                 tab_embs = np.stack(tab_embs)
                 assert len(tab_embs) == len(tables)
+                assert len(embs) == idx
 
-                assert len(embs) == idx + 1
-
-                self.emb_cache[key] = (sent_embs, col_embs, tab_embs)
+                self.emb_cache[key] = (col_embs, tab_embs)
                 
-        else:
-            for sent in src_sents:
-                key = str(sent)
-                if key in self.emb_cache:
-                    continue
-                ids = [self.CLS]
-                seg_ids = []
-                for seg in sent:
-                    seg_id = self.tokenizer.encode(' '.join(seg))
-                    seg_ids.append(seg_id)
-                    ids += seg_id
-                with torch.no_grad():
-                    ids_tensor = torch.tensor([ids])
-                    if self.args.cuda:
-                        ids_tensor = ids_tensor.cuda()
-                    embs = self.lm_model(ids_tensor)[0][0]
-                embs = embs.cpu().numpy()[1:]  # remove CLS
-                sent_embs = []
-                idx = 0
-                for seg_id in seg_ids:
-                    l = len(seg_id)
-                    sent_embs.append(embs[idx: idx + l].mean(0))
-                    idx += l
-                
-                sent_embs = np.stack(sent_embs)
-                assert len(sent_embs) == len(sent)
-                self.emb_cache[key] = sent_embs
+        
+        for sent in src_sents:
+            key = str(sent)
+            if key in self.emb_cache:
+                continue
+            ids = [self.CLS]
+            seg_ids = []
+            for seg in sent:
+                seg_id = self.tokenizer.encode(' '.join(seg))
+                seg_ids.append(seg_id)
+                ids += seg_id
+            with torch.no_grad():
+                ids_tensor = torch.tensor([ids])
+                if self.args.cuda:
+                    ids_tensor = ids_tensor.cuda()
+                embs = self.lm_model(ids_tensor)[0][0]
+            embs = embs.cpu().numpy()[1:]  # remove CLS
+            sent_embs = []
+            idx = 0
+            for seg_id in seg_ids:
+                l = len(seg_id)
+                sent_embs.append(_pool(embs[idx: idx + l]))
+                idx += l
+            
+            sent_embs = np.stack(sent_embs)
+            assert len(sent_embs) == len(sent)
+            assert len(embs) == idx
+            self.emb_cache[key] = sent_embs
 
         def pad_embs(embs):
+            B = len(embs)
             max_len = max([len(emb) for emb in embs])
-            val_emb_array = np.zeros((B, max_len, self.args.col_embed_size), dtype=np.float32)
+            val_emb_array = np.zeros((B, max_len, self.lm_embed_size), dtype=np.float32)
             for i in range(B):
                 for t in range(len(embs[i])):
                     val_emb_array[i, t, :] = embs[i][t]
@@ -221,8 +223,8 @@ class BasicModel(nn.Module):
         if column_names and table_names:
             sent_embs_, col_embs_, tab_embs_ = [], [], []
             for sent, columns, tables in zip(src_sents, column_names, table_names):
-                key = str(sent + columns + tables)
-                sent_embs, col_embs, tab_embs = self.emb_cache[key]
+                sent_embs = self.emb_cache[str(sent)]
+                col_embs, tab_embs = self.emb_cache[str(columns + tables)]
                 sent_embs_.append(sent_embs)
                 col_embs_.append(col_embs)
                 tab_embs_.append(tab_embs)
@@ -231,22 +233,9 @@ class BasicModel(nn.Module):
         else:
             sent_embs_ = []
             for sent in src_sents:
-                key = str(sent)
-                sent_embs = self.emb_cache[key]
+                sent_embs = self.emb_cache[str(sent)]
                 sent_embs_.append(sent_embs)
             return pad_embs(sent_embs_)
-
-
-        # max_len = max(val_len)
-
-        # val_emb_array = np.zeros((B, max_len, self.args.col_embed_size), dtype=np.float32)
-        # for i in range(B):
-        #     for t in range(len(val_embs[i])):
-        #         val_emb_array[i, t, :] = val_embs[i][t]
-        # val_inp = torch.from_numpy(val_emb_array)
-        # if self.args.cuda:
-        #     val_inp = val_inp.cuda()
-        # return val_inp
 
     def save(self, path):
         dir_name = os.path.dirname(path)

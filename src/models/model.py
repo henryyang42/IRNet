@@ -23,7 +23,7 @@ from src.rule import semQL as define_rule
 class IRNet(BasicModel):
     
     def __init__(self, args, grammar):
-        super(IRNet, self).__init__()
+        super(IRNet, self).__init__(args)
         self.args = args
         self.grammar = grammar
         self.use_column_pointer = args.column_pointer
@@ -98,6 +98,7 @@ class IRNet(BasicModel):
         nn.init.xavier_normal_(self.type_embed.weight.data)
         nn.init.xavier_normal_(self.N_embed.weight.data)
         print('Use Column Pointer: ', True if self.use_column_pointer else False)
+
         
     def forward(self, examples):
         args = self.args
