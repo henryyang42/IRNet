@@ -3,7 +3,7 @@
 devices=$1
 save_name=$2
 weight=$3
-embed_size=1024
+embed_size=300
 
 CUDA_VISIBLE_DEVICES=$devices python eval.py --dataset ./data \
 --glove_embed_path ./data/glove.42B.300d.txt \

@@ -13,6 +13,7 @@ import copy
 import numpy as np
 import os
 import torch
+import pickle
 from nltk.stem import WordNetLemmatizer
 
 from src.dataset import Example
@@ -25,15 +26,18 @@ wordnet_lemmatizer = WordNetLemmatizer()
 def load_word_emb(file_name, use_small=False):
     print ('Loading word embedding from %s'%file_name)
     ret = {}
-    return ret
-    with open(file_name) as inf:
-        for idx, line in enumerate(inf):
-            if (use_small and idx >= 100):
-                break
-            info = line.strip().split(' ')
-            if info[0].lower() not in ret:
-                ret[info[0]] = np.array(list(map(lambda x:float(x), info[1:])))
-    print ('Loading word embedding loaded.')
+
+    if not os.path.exists('data/glove'):
+        with open(file_name) as inf:
+            for idx, line in enumerate(inf):
+                info = line.strip().split(' ')
+                if info[0].lower() not in ret:
+                    ret[info[0]] = np.array(list(map(lambda x:float(x), info[1:])))
+        pickle.dump(ret, open('data/glove', 'wb'))
+    else:
+        ret = pickle.load(open('data/glove', 'rb'))
+    print ('Word embedding loaded.')
+
     return ret
 
 def lower_keys(x):

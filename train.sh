@@ -2,7 +2,7 @@
 
 devices=$1
 save_name=$2
-embed_size=768
+embed_size=300
 
 CUDA_VISIBLE_DEVICES=$devices python train.py --dataset ./data \
 --glove_embed_path ./data/glove.42B.300d.txt \
@@ -22,4 +22,4 @@ CUDA_VISIBLE_DEVICES=$devices python train.py --dataset ./data \
 --att_vec_size $embed_size \
 --batch_size 64 \
 --col_embed_size $embed_size \
---lr 0.0005 --toy
+--lr 0.001
