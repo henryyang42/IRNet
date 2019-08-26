@@ -25,18 +25,20 @@ class BasicModel(nn.Module):
         super(BasicModel, self).__init__()
         self.args = args
 
-        weight = 'xlnet-base-cased'
-        # self.lm_model = BertModel.from_pretrained(weight)
-        # self.tokenizer = BertTokenizer.from_pretrained(weight)
-        # self.CLS = self.tokenizer.encode('[CLS]')[0]
-        # self.PAD = self.tokenizer.encode('[PAD]')[0]
-        # self.SEP = self.tokenizer.encode('[SEP]')[0]
-        self.lm_model = XLNetModel.from_pretrained(weight)
-        self.tokenizer = XLNetTokenizer.from_pretrained(weight)
+        weight = 'bert-base-uncased'
+        self.lm_model = BertModel.from_pretrained(weight)
+        self.tokenizer = BertTokenizer.from_pretrained(weight)
+        self.CLS = self.tokenizer.encode('[CLS]')[0]
+        self.PAD = self.tokenizer.encode('[PAD]')[0]
+        self.SEP = self.tokenizer.encode('[SEP]')[0]
+        
+        # weight = 'xlnet-base-cased'
+        # self.lm_model = XLNetModel.from_pretrained(weight)
+        # self.tokenizer = XLNetTokenizer.from_pretrained(weight)
 
-        self.CLS = self.tokenizer.encode('<cls>')[0]
-        self.PAD = self.tokenizer.encode('<pad>')[0]
-        self.SEP = self.tokenizer.encode('<sep>')[0]
+        # self.CLS = self.tokenizer.encode('<cls>')[0]
+        # self.PAD = self.tokenizer.encode('<pad>')[0]
+        # self.SEP = self.tokenizer.encode('<sep>')[0]
 
         self.emb_cache = {}
         self.emb_cache_bert = {}
@@ -290,9 +292,12 @@ class BasicModel(nn.Module):
                 tab_embs_.append(tab_embs)
 
             sent_embs_bert, col_embs_bert, tab_embs_bert = self.gen_x_batch_bert(src_sents, column_names, table_names)
-            sent_embs_ = pad_embs(sent_embs_) + sent_embs_bert
-            col_embs_ = pad_embs(col_embs_) + col_embs_bert
-            tab_embs_ = pad_embs(tab_embs_) + tab_embs_bert
+            sent_embs_ = (pad_embs(sent_embs_) + sent_embs_bert) / 2
+            col_embs_ = (pad_embs(col_embs_) + col_embs_bert) / 2
+            tab_embs_ = (pad_embs(tab_embs_) + tab_embs_bert) / 2
+            # sent_embs_ = pad_embs(sent_embs_)
+            # col_embs_ = pad_embs(col_embs_)
+            # tab_embs_ = pad_embs(tab_embs_) 
             return sent_embs_, col_embs_, tab_embs_
         else:
             sent_embs_ = []
@@ -305,7 +310,7 @@ class BasicModel(nn.Module):
                 sent_embs_.append(sent_embs)
 
             sent_embs_bert = self.gen_x_batch_bert(src_sents)
-            sent_embs_ = pad_embs(sent_embs_) + sent_embs_bert
+            sent_embs_ = (pad_embs(sent_embs_) + sent_embs_bert) / 2
             return sent_embs_
 
     def save(self, path):

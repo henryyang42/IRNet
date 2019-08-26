@@ -22,4 +22,4 @@ CUDA_VISIBLE_DEVICES=$devices python train.py --dataset ./data \
 --att_vec_size $embed_size \
 --batch_size 64 \
 --col_embed_size $embed_size \
---lr 0.001
+--lr 0.001 
