@@ -41,6 +41,8 @@ def evaluate(args):
 
     model.word_emb = utils.load_word_emb(args.glove_embed_path)
 
+    print(model)
+
     json_datas = utils.epoch_acc(model, args.batch_size, val_sql_data, val_table_data,
                            beam_size=args.beam_size)
     # utils.eval_acc(json_datas, val_sql_data)
