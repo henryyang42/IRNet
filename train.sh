@@ -2,12 +2,12 @@
 
 devices=$1
 save_name=$2
-embed_size=300
+embed_size=1068
 
 CUDA_VISIBLE_DEVICES=$devices python train.py --dataset ./data \
 --glove_embed_path ./data/glove.42B.300d.txt \
 --cuda \
---epoch 50 \
+--epoch 100 \
 --loss_epoch_threshold 50 \
 --sketch_loss_coefficie 1.0 \
 --beam_size 1 \
@@ -22,4 +22,4 @@ CUDA_VISIBLE_DEVICES=$devices python train.py --dataset ./data \
 --att_vec_size $embed_size \
 --batch_size 64 \
 --col_embed_size $embed_size \
---lr 0.001  --load_model saved_model/useful/bert/{48}_{0.5155038759689923}.model --toy 1000
+--lr 0.001 --load_model saved_model/bert_concat08-27_08:41/best_model.model #  --toy 1000

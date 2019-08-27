@@ -79,18 +79,20 @@ def train(args):
             
             if args.toy:
                 print("Use train data for validation in toy mode")
-                json_datas = utils.epoch_acc(model, args.batch_size, sql_data, table_data,
+                json_datas = utils.epoch_acc(model, args.batch_size, val_sql_data, val_table_data,
                                                 beam_size=args.beam_size)
-                acc = utils.eval_acc(json_datas, sql_data)
+                acc = utils.eval_acc(json_datas, val_sql_data)
             else:
                 json_datas = utils.epoch_acc(model, args.batch_size, val_sql_data, val_table_data,
                                                 beam_size=args.beam_size)
                 acc = utils.eval_acc(json_datas, val_sql_data)
             
             if acc > best_dev_acc:
-                utils.save_checkpoint(model, os.path.join(model_save_path, 'best_model.model'))
+                if acc > 0.4:
+                    utils.save_checkpoint(model, os.path.join(model_save_path, 'best_model.model'))
                 best_dev_acc = acc
-            utils.save_checkpoint(model, os.path.join(model_save_path, '{%s}_{%s}.model') % (epoch, acc))
+            if acc > 0.4:
+                utils.save_checkpoint(model, os.path.join(model_save_path, '{%s}_{%s}.model') % (epoch, acc))
 
             epoch_end = time.time()
             log_str = 'Epoch: %d, Loss: %f, Sketch Acc: %f, Acc: %f, time: %f\n' % (

@@ -44,13 +44,14 @@ class BasicModel(nn.Module):
         self.emb_cache_bert = {}
         self.lm_embed_size = 768
 
-        bias = True
-        self.sent_embed_nn = nn.Linear(
-            self.lm_embed_size, self.args.col_embed_size, bias=bias)
-        self.column_embed_nn = nn.Linear(
-            self.lm_embed_size, self.args.col_embed_size, bias=bias)
-        self.table_embed_nn = nn.Linear(
-            self.lm_embed_size, self.args.col_embed_size, bias=bias)
+        # bias = False
+        # self.sent_embed_nn = nn.Linear(
+        #     self.lm_embed_size, self.args.col_embed_size // 2, bias=bias)
+        # self.column_embed_nn = nn.Linear(
+        #     self.lm_embed_size, self.args.col_embed_size // 2, bias=bias)
+        # self.table_embed_nn = nn.Linear(
+        #     self.lm_embed_size, self.args.col_embed_size // 2, bias=bias)
+        
 
     def embedding_cosine(self, src_embedding, table_embedding, table_unk_mask):
         embedding_differ = []
@@ -142,7 +143,7 @@ class BasicModel(nn.Module):
     def gen_x_batch_bert(self, src_sents, column_names=None, table_names=None):
         if self.args.ft:
             self.emb_cache_bert = {}
-            
+
         def _pool(emb):
             return emb.mean()
         
@@ -178,12 +179,14 @@ class BasicModel(nn.Module):
                 if self.args.cuda:
                     ids_tensor = ids_tensor.cuda()
                     seg_ids_tensor = seg_ids_tensor.cuda()
+
                 if self.args.ft:
-                    embs = torch.stack(self.lm_model(ids_tensor)[-1][-5:]).mean(0).squeeze(0)
+                    embs = self.lm_model(ids_tensor)[-1]
                 else:
                     with torch.no_grad():
-                        embs = torch.stack(self.lm_model(ids_tensor)[-1][-5:]).mean(0).squeeze(0)
-
+                        embs = self.lm_model(ids_tensor)[-1]
+                
+                embs = torch.stack(embs[-5:]).mean(0).squeeze(0)  # mean for last 5 hidden layers
                 embs = embs[1:]  # remove CLS
                 idx = 0
                 col_embs = []
@@ -222,12 +225,14 @@ class BasicModel(nn.Module):
             ids_tensor = torch.tensor([ids])
             if self.args.cuda:
                 ids_tensor = ids_tensor.cuda()
+            
             if self.args.ft:
-                    embs = torch.stack(self.lm_model(ids_tensor)[-1][-5:]).mean(0).squeeze(0)
+                    embs = self.lm_model(ids_tensor)[-1]
             else:
                 with torch.no_grad():
-                    embs = torch.stack(self.lm_model(ids_tensor)[-1][-5:]).mean(0).squeeze(0)
+                    embs = self.lm_model(ids_tensor)[-1]
             
+            embs = torch.stack(embs[-5:]).mean(0).squeeze(0)  # mean for last 5 hidden layers
             embs = embs[1:]  # remove CLS
             sent_embs = []
             idx = 0
@@ -263,39 +268,63 @@ class BasicModel(nn.Module):
                 col_embs_.append(col_embs)
                 tab_embs_.append(tab_embs)
 
-            return self.sent_embed_nn(pad_embs(sent_embs_)), self.column_embed_nn(pad_embs(col_embs_)), self.table_embed_nn(pad_embs(tab_embs_))
+            sent_embs_ = pad_embs(sent_embs_)
+            col_embs_ = pad_embs(col_embs_)
+            tab_embs_ = pad_embs(tab_embs_)
+            # sent_embs_ = self.sent_embed_nn(sent_embs_)
+            # col_embs_ = self.column_embed_nn(col_embs_)
+            # tab_embs_ = self.table_embed_nn(tab_embs_)
+            return sent_embs_, col_embs_, tab_embs_
         else:
             sent_embs_ = []
             for sent in src_sents:
                 sent_embs = self.emb_cache_bert[str(sent)]
                 sent_embs_.append(sent_embs)
-            return self.sent_embed_nn(pad_embs(sent_embs_))
+            sent_embs_ = pad_embs(sent_embs_)
+            # sent_embs_ = self.sent_embed_nn(sent_embs_)
+            return sent_embs_
 
     def gen_x_batch(self, src_sents, column_names=None, table_names=None):
         def pad_embs(embs):
             B = len(embs)
             max_len = max([len(emb) for emb in embs])
-            val_emb_array = np.zeros(
-                (B, max_len, self.args.col_embed_size), dtype=np.float32)
+            val_emb_array = torch.zeros(
+                 (B, max_len, 300), dtype=torch.float32)
+                
             for i in range(B):
                 for t in range(len(embs[i])):
                     val_emb_array[i, t, :] = embs[i][t]
 
-            val_inp = torch.from_numpy(val_emb_array)
+            val_inp = val_emb_array
             if self.args.cuda:
                 val_inp = val_inp.cuda()
             return val_inp
 
         def gen_x(s):
+            # toks = []
+            # for ws in s:
+            #     toks += ws
+            # toks_, embs_ = bert_embedding([' '.join(toks)])[0]
+            # # print(toks)
+            # # print(toks_)
+            # assert len(toks_) >= len(toks)
+            # idx = 0
+            # emb = []
+            # for ws in s:
+            #     l = len(ws)
+            #     emb.append(np.mean(embs_[idx: idx + l]))
+            #     idx += l
+            # assert len(emb) == len(s)
+            # return emb
+
             emb = []
             for ws in s:
                 wse = []
                 for w in ws:
                     wse.append(self.word_emb.get(w, self.word_emb['unk']))
-                emb.append(np.max(wse, axis=0) / len(wse))
-            return emb
+                emb.append(np.mean(wse, axis=0))
+            return torch.from_numpy(np.stack(emb))
 
-        G, B = 1, 1
         if column_names and table_names:
             sent_embs_, col_embs_, tab_embs_ = [], [], []
             for sent, columns, tables in zip(src_sents, column_names, table_names):
@@ -313,9 +342,9 @@ class BasicModel(nn.Module):
                 tab_embs_.append(tab_embs)
 
             sent_embs_bert, col_embs_bert, tab_embs_bert = self.gen_x_batch_bert(src_sents, column_names, table_names)
-            sent_embs_ = (pad_embs(sent_embs_) * G + sent_embs_bert * B) / (G + B)
-            col_embs_ = (pad_embs(col_embs_) * G + col_embs_bert * B) / (G + B)
-            tab_embs_ = (pad_embs(tab_embs_) * G + tab_embs_bert * B) / (G + B)
+            sent_embs_ = torch.cat((pad_embs(sent_embs_), sent_embs_bert), -1)
+            col_embs_ = torch.cat((pad_embs(col_embs_), col_embs_bert), -1)
+            tab_embs_ = torch.cat((pad_embs(tab_embs_), tab_embs_bert), -1)
             return sent_embs_, col_embs_, tab_embs_
         else:
             sent_embs_ = []
@@ -328,7 +357,7 @@ class BasicModel(nn.Module):
                 sent_embs_.append(sent_embs)
 
             sent_embs_bert = self.gen_x_batch_bert(src_sents)
-            sent_embs_ = (pad_embs(sent_embs_) * G + sent_embs_bert * B) / (G + B)
+            sent_embs_ = torch.cat((pad_embs(sent_embs_), sent_embs_bert), -1)
             return sent_embs_
 
     def save(self, path):
