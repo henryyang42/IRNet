@@ -140,7 +140,9 @@ class BasicModel(nn.Module):
         return padding_result
 
     def gen_x_batch_bert(self, src_sents, column_names=None, table_names=None):
-        self.emb_cache_bert = {}
+        if self.args.ft:
+            self.emb_cache_bert = {}
+            
         def _pool(emb):
             return emb.mean()
         

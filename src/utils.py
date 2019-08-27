@@ -331,7 +331,10 @@ def load_dataset(dataset_dir, use_small=0):
         table_data = json.load(inf)
 
     train_sql_data, train_table_data = load_data_new(TRAIN_PATH, table_data, use_small=use_small)
-    val_sql_data, val_table_data = load_data_new(DEV_PATH, table_data, use_small=use_small // 10)
+    if use_small:
+        val_sql_data, val_table_data = load_data_new(TRAIN_PATH, table_data, use_small=use_small // 10)
+    else:
+        val_sql_data, val_table_data = load_data_new(DEV_PATH, table_data, use_small=use_small)
 
     return train_sql_data, train_table_data, val_sql_data, val_table_data
 
