@@ -304,7 +304,7 @@ def eval_acc(preds, sqls):
     return best_correct / len(preds)
 
 
-def load_data_new(sql_path, table_data, use_small=False):
+def load_data_new(sql_path, table_data, use_small=0):
     sql_data = []
 
     print("Loading data from %s" % sql_path)
@@ -315,12 +315,12 @@ def load_data_new(sql_path, table_data, use_small=False):
     table_data_new = {table['db_id']: table for table in table_data}
 
     if use_small:
-        return sql_data[:500], table_data_new
+        return sql_data[:use_small], table_data_new
     else:
         return sql_data, table_data_new
 
 
-def load_dataset(dataset_dir, use_small=False):
+def load_dataset(dataset_dir, use_small=0):
     print("Loading from datasets...")
 
     TABLE_PATH = os.path.join(dataset_dir, "tables.json")
@@ -331,7 +331,7 @@ def load_dataset(dataset_dir, use_small=False):
         table_data = json.load(inf)
 
     train_sql_data, train_table_data = load_data_new(TRAIN_PATH, table_data, use_small=use_small)
-    val_sql_data, val_table_data = load_data_new(DEV_PATH, table_data, use_small=use_small)
+    val_sql_data, val_table_data = load_data_new(DEV_PATH, table_data, use_small=use_small // 10)
 
     return train_sql_data, train_table_data, val_sql_data, val_table_data
 

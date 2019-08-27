@@ -29,7 +29,7 @@ def train(args):
     """
     grammar = semQL.Grammar()
     sql_data, table_data, val_sql_data,\
-    val_table_data= utils.load_dataset(args.dataset, use_small=args.toy)
+    val_table_data = utils.load_dataset(args.dataset, use_small=args.toy)
 
     print(f'Got {len(sql_data)} sql_data')
 

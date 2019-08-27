@@ -33,7 +33,7 @@ class BasicModel(nn.Module):
         self.SEP = self.tokenizer.encode('[SEP]')[0]
         
         # weight = 'xlnet-base-cased'
-        # self.lm_model = XLNetModel.from_pretrained(weight)
+        # self.lm_model = XLNetModel.from_pretrained(weight, output_hidden_states=True)
         # self.tokenizer = XLNetTokenizer.from_pretrained(weight)
 
         # self.CLS = self.tokenizer.encode('<cls>')[0]
@@ -44,12 +44,13 @@ class BasicModel(nn.Module):
         self.emb_cache_bert = {}
         self.lm_embed_size = 768
 
+        bias = True
         self.sent_embed_nn = nn.Linear(
-            self.lm_embed_size, self.args.col_embed_size)
+            self.lm_embed_size, self.args.col_embed_size, bias=bias)
         self.column_embed_nn = nn.Linear(
-            self.lm_embed_size, self.args.col_embed_size)
+            self.lm_embed_size, self.args.col_embed_size, bias=bias)
         self.table_embed_nn = nn.Linear(
-            self.lm_embed_size, self.args.col_embed_size)
+            self.lm_embed_size, self.args.col_embed_size, bias=bias)
 
     def embedding_cosine(self, src_embedding, table_embedding, table_unk_mask):
         embedding_differ = []
@@ -139,15 +140,17 @@ class BasicModel(nn.Module):
         return padding_result
 
     def gen_x_batch_bert(self, src_sents, column_names=None, table_names=None):
+        self.emb_cache_bert = {}
         def _pool(emb):
             return emb.mean()
-        self.emb_cache_bert = {}
+        
         if column_names and table_names:
             for columns, tables in zip(column_names, table_names):
                 key = str(columns + tables)
                 if key in self.emb_cache_bert:
                     continue
-
+                seg_idx = 0
+                seg_ids = [seg_idx]
                 ids = [self.CLS]
 
                 col_ids = []
@@ -155,20 +158,31 @@ class BasicModel(nn.Module):
                     col_id = self.tokenizer.encode(' '.join(column))
                     col_ids.append(col_id)
                     ids += col_id + [self.SEP]
+                    seg_ids += [seg_idx % 2] * (len(col_id) + 1)
+                    seg_idx += 1
 
                 tab_ids = []
                 for table in tables:
                     tab_id = self.tokenizer.encode(' '.join(table))
                     tab_ids.append(tab_id)
                     ids += tab_id + [self.SEP]
+                    seg_ids += [seg_idx % 2] * (len(tab_id) + 1)
+                    seg_idx += 1
                 
-                if True:
-                #with torch.no_grad():
-                    ids_tensor = torch.tensor([ids])
-                    if self.args.cuda:
-                        ids_tensor = ids_tensor.cuda()
-                    embs = torch.stack(self.lm_model(ids_tensor)[-1][-5:]).mean(0)[0]
-                embs = embs[1:] #.cpu().numpy()[1:]  # remove CLS
+                assert len(ids) == len(seg_ids)
+
+                ids_tensor = torch.tensor([ids])
+                seg_ids_tensor = torch.tensor([seg_ids])
+                if self.args.cuda:
+                    ids_tensor = ids_tensor.cuda()
+                    seg_ids_tensor = seg_ids_tensor.cuda()
+                if self.args.ft:
+                    embs = torch.stack(self.lm_model(ids_tensor)[-1][-5:]).mean(0).squeeze(0)
+                else:
+                    with torch.no_grad():
+                        embs = torch.stack(self.lm_model(ids_tensor)[-1][-5:]).mean(0).squeeze(0)
+
+                embs = embs[1:]  # remove CLS
                 idx = 0
                 col_embs = []
                 for col_id in col_ids:
@@ -203,14 +217,16 @@ class BasicModel(nn.Module):
                 ids += seg_id
             ids.append(self.SEP)
 
-            if True:
-            #with torch.no_grad():
-                ids_tensor = torch.tensor([ids])
-                if self.args.cuda:
-                    ids_tensor = ids_tensor.cuda()
-                    embs = torch.stack(self.lm_model(ids_tensor)[-1][-5:]).mean(0)[0]
+            ids_tensor = torch.tensor([ids])
+            if self.args.cuda:
+                ids_tensor = ids_tensor.cuda()
+            if self.args.ft:
+                    embs = torch.stack(self.lm_model(ids_tensor)[-1][-5:]).mean(0).squeeze(0)
+            else:
+                with torch.no_grad():
+                    embs = torch.stack(self.lm_model(ids_tensor)[-1][-5:]).mean(0).squeeze(0)
             
-            embs = embs[1:] #.cpu().numpy()[1:]  # remove CLS
+            embs = embs[1:]  # remove CLS
             sent_embs = []
             idx = 0
             for seg_id in seg_ids:
@@ -232,7 +248,6 @@ class BasicModel(nn.Module):
                 for t in range(len(embs[i])):
                     val_emb_array[i, t, :] = embs[i][t]
 
-            # val_inp = torch.from_numpy(val_emb_array)
             if self.args.cuda:
                 val_emb_array = val_emb_array.cuda()
             return val_emb_array
@@ -275,9 +290,10 @@ class BasicModel(nn.Module):
                 wse = []
                 for w in ws:
                     wse.append(self.word_emb.get(w, self.word_emb['unk']))
-                emb.append(sum(wse) / float(len(wse)))
+                emb.append(np.max(wse, axis=0) / len(wse))
             return emb
 
+        G, B = 1, 1
         if column_names and table_names:
             sent_embs_, col_embs_, tab_embs_ = [], [], []
             for sent, columns, tables in zip(src_sents, column_names, table_names):
@@ -295,12 +311,9 @@ class BasicModel(nn.Module):
                 tab_embs_.append(tab_embs)
 
             sent_embs_bert, col_embs_bert, tab_embs_bert = self.gen_x_batch_bert(src_sents, column_names, table_names)
-            sent_embs_ = (pad_embs(sent_embs_) + sent_embs_bert)# / 2
-            col_embs_ = (pad_embs(col_embs_) + col_embs_bert)# / 2
-            tab_embs_ = (pad_embs(tab_embs_) + tab_embs_bert)# / 2
-            # sent_embs_ = pad_embs(sent_embs_)
-            # col_embs_ = pad_embs(col_embs_)
-            # tab_embs_ = pad_embs(tab_embs_) 
+            sent_embs_ = (pad_embs(sent_embs_) * G + sent_embs_bert * B) / (G + B)
+            col_embs_ = (pad_embs(col_embs_) * G + col_embs_bert * B) / (G + B)
+            tab_embs_ = (pad_embs(tab_embs_) * G + tab_embs_bert * B) / (G + B)
             return sent_embs_, col_embs_, tab_embs_
         else:
             sent_embs_ = []
@@ -313,7 +326,7 @@ class BasicModel(nn.Module):
                 sent_embs_.append(sent_embs)
 
             sent_embs_bert = self.gen_x_batch_bert(src_sents)
-            sent_embs_ = (pad_embs(sent_embs_) + sent_embs_bert)# / 2
+            sent_embs_ = (pad_embs(sent_embs_) * G + sent_embs_bert * B) / (G + B)
             return sent_embs_
 
     def save(self, path):

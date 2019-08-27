@@ -13,6 +13,7 @@ import numpy as np
 
 def init_arg_parser():
     arg_parser = argparse.ArgumentParser()
+    arg_parser.add_argument('--ft', default=False, action='store_true', help='fine tune bert/xlnet')
     arg_parser.add_argument('--seed', default=5783287, type=int, help='random seed')
     arg_parser.add_argument('--cuda', action='store_true', help='use gpu')
     arg_parser.add_argument('--lr_scheduler', action='store_true', help='use learning rate scheduler')
@@ -54,7 +55,7 @@ def init_arg_parser():
 
 
     arg_parser.add_argument('--save_to', default='model', type=str, help='save trained model to')
-    arg_parser.add_argument('--toy', action='store_true',
+    arg_parser.add_argument('--toy', default=0, type=int,
                             help='If set, use small data; used for fast debugging.')
     arg_parser.add_argument('--clip_grad', default=5., type=float, help='clip gradients')
     arg_parser.add_argument('--max_epoch', default=-1, type=int, help='maximum number of training epoches')
